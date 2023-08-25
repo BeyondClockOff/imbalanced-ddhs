@@ -26,6 +26,32 @@ class FiGen:
         self.ratio = ratio
         self.index = index
 
+    def extract_kernel(self, data: pd.DataFrame, start: float, last: float):
+        """
+        분위수로 데이터의 분포를 추정하여 데이터의 중간부분을 인덱스로 추출
+
+        Args:
+            data : 입력 데이터
+            start : 추출 시작 percentile
+            last : 추출 끝 percentile
+        Returns:
+            데이터의 분포 중 중간 부분의 인덱스를 추출하여 리턴
+        """
+
+        # 추출할 분위수 범위 설정
+        a_percentile = start
+        b_percentile = last
+
+        # 각 열의 분위수 값 계산
+        percentiles = np.percentile(data, [a_percentile, b_percentile], axis=0)
+
+        # 각 열별로 a < x < b 범위에 해당하는 데이터 추출
+        condition = np.all(
+            (data > percentiles[0, :]) & (data < percentiles[1, :]), axis=1
+        )
+
+        return condition
+
     def extract_middle_percent(self, data: pd.DataFrame, start: float, last: float):
         """
         데이터의 분포 중 중간 부분을 추출
@@ -39,14 +65,10 @@ class FiGen:
         """
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(data.values)
-        kde = KernelDensity(kernel="gaussian", bandwidth=0.5).fit(
-            data_scaled
-        )  ##TODO: 계산이 안터지도록 하기, gmm으로 변경
-        log_prob = kde.score_samples(data_scaled)
-        prob = np.exp(log_prob)
-        threshold_low, threshold_high = np.percentile(prob, [start, last])
-        mask = np.logical_and(prob >= threshold_low, prob <= threshold_high)
-        data_middle = data[mask]
+
+        # 분위수 기반으로 데이터 추출
+        self_kde = self.extract_kernel(data_scaled, start, last)
+        data_middle = data[self_kde]
 
         if len(data_middle) > 0:
             return data_middle
@@ -80,8 +102,7 @@ class FiGen:
         )
 
         orgin_small_non_cat_scaled_X = pd.DataFrame(
-            scaler.fit_transform(small_X[self.index]),
-            columns=self.index,
+            scaler.fit_transform(small_X[self.index]), columns=self.index
         )
 
         # 데이터프레임을 numpy 배열로 변환
@@ -163,7 +184,6 @@ class FiGen:
             )
 
             small_condition = distances_small < radius_small_X
-            large_condition = distances_large < radius_large_X  # TODO: 사용 확인 부탁드려요
 
             # 생성된 small class 데이터가 small, large class 중 small에 가까운지, small class의 지름을 넘지는 않는지
             condition = np.logical_and(
@@ -200,9 +220,8 @@ class FiGen:
         continue_large_X = large_X[self.index]
 
         # 범주형 변수만 가져오는 부분
-        categorical_colnames = list(set(small_X.columns) - set(self.index))
-        categorical_small_X = small_X[categorical_colnames]
-        categorical_large_X = large_X[categorical_colnames]
+        categorical_small_X = small_X[list(set(small_X.columns) - set(self.index))]
+        categorical_large_X = large_X[list(set(small_X.columns) - set(self.index))]
 
         # 상위 n% 필터링 부분
         midlle_small_X = self.extract_middle_percent(
@@ -229,17 +248,17 @@ class FiGen:
 
         small_total_x = pd.concat([synthetic_small_X, origin_small_x], axis=0)
 
-        small_total_x[TARGET] = small_Y.iloc[:1].values[0][0]
+        small_total_x["target"] = small_Y.iloc[:1].values[0][0]
 
         origin_large_x = pd.concat(
             [midlle_large_X, categorical_large_X.loc[midlle_large_X.index]], axis=1
         )
 
-        origin_large_x[TARGET] = large_Y.iloc[:1].values[0][0]
+        origin_large_x["target"] = large_Y.iloc[:1].values[0][0]
 
         total = pd.concat([small_total_x, origin_large_x], axis=0)
 
-        return total.drop(columns=[TARGET]), total[TARGET]
+        return total.drop(columns=["target"]), total["target"]
 
     def fit(
         self,
