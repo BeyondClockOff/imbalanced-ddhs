@@ -208,6 +208,8 @@ class FiGen:
         # 범주형 변수만 가져오는 부분
         categorical_small_X = small_X[list(set(small_X.columns) - set(self.index))]
         categorical_large_X = large_X[list(set(small_X.columns) - set(self.index))]
+        categorical_small_X = small_X[list(set(small_X.columns) - set(self.index))]
+        categorical_large_X = large_X[list(set(small_X.columns) - set(self.index))]
 
         # 상위 n% 필터링 부분
         midlle_small_X = self.extract_middle_percent(
