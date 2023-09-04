@@ -4,12 +4,9 @@ import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sdv.metadata import SingleTableMetadata
-from sklearn.neighbors import KernelDensity
 from sdv.lite import SingleTablePreset
 
 # push + prd
-
-TARGET: str = "target"
 
 
 # imbalanced에 data level로 해결하는 모델
@@ -26,6 +23,27 @@ class FiGen:
         self.ratio = ratio
         self.index = index
 
+    def extract_kernel(self, data: pd.DataFrame, start: float, last: float):
+        """
+        분위수로 데이터의 분포를 추정하여 데이터의 중간부분을 인덱스로 추출
+
+        Args:
+            data : 입력 데이터
+            start : 추출 시작 percentile
+            last : 추출 끝 percentile
+        Returns:
+            데이터의 분포 중 중간 부분의 인덱스를 추출하여 리턴
+        """
+        # 각 열의 분위수 값 계산
+        percentiles = np.percentile(data, [start, last], axis=0)
+
+        # 각 열별로 a < x < b 범위에 해당하는 데이터 추출
+        condition = np.all(
+            (data > percentiles[0, :]) & (data < percentiles[1, :]), axis=1
+        )
+
+        return condition
+
     def extract_middle_percent(self, data: pd.DataFrame, start: float, last: float):
         """
         데이터의 분포 중 중간 부분을 추출
@@ -39,14 +57,10 @@ class FiGen:
         """
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(data.values)
-        kde = KernelDensity(kernel="gaussian", bandwidth=0.5).fit(
-            data_scaled
-        )  ##TODO: 계산이 안터지도록 하기, gmm으로 변경
-        log_prob = kde.score_samples(data_scaled)
-        prob = np.exp(log_prob)
-        threshold_low, threshold_high = np.percentile(prob, [start, last])
-        mask = np.logical_and(prob >= threshold_low, prob <= threshold_high)
-        data_middle = data[mask]
+
+        # 분위수 기반으로 데이터 추출
+        kde_condition = self.extract_kernel(data_scaled, start, last)
+        data_middle = data[kde_condition]
 
         if len(data_middle) > 0:
             return data_middle
@@ -80,8 +94,7 @@ class FiGen:
         )
 
         orgin_small_non_cat_scaled_X = pd.DataFrame(
-            scaler.fit_transform(small_X[self.index]),
-            columns=self.index,
+            scaler.fit_transform(small_X[self.index]), columns=self.index
         )
 
         # 데이터프레임을 numpy 배열로 변환
@@ -162,12 +175,9 @@ class FiGen:
                 z.values[:, np.newaxis, :] - center_large_X, axis=2
             )
 
-            small_condition = distances_small < radius_small_X
-            large_condition = distances_large < radius_large_X  # TODO: 사용 확인 부탁드려요
-
             # 생성된 small class 데이터가 small, large class 중 small에 가까운지, small class의 지름을 넘지는 않는지
             condition = np.logical_and(
-                small_condition, distances_small < distances_large
+                distances_small < radius_small_X, distances_small < distances_large
             )
 
             synthetic_sample = pd.concat([synthetic_sample, z[condition]])
@@ -188,7 +198,7 @@ class FiGen:
             small_X (pd.DataFrame): small class의 x
             large_X (pd.DataFrame): large class의 x
         Returns:
-            생성된 데이터셋 + 기존 데이터셋을 합쳐 통합 데이터셋을 리턴
+            Tuple[pd.DataFrame, pd.Series]: ([생성된 데이터셋 X, 기존 데이터셋 X], [생성된 y, 기존 y])
         """
 
         # Nan 값 제거 요청
@@ -200,9 +210,9 @@ class FiGen:
         continue_large_X = large_X[self.index]
 
         # 범주형 변수만 가져오는 부분
-        categorical_colnames = list(set(small_X.columns) - set(self.index))
-        categorical_small_X = small_X[categorical_colnames]
-        categorical_large_X = large_X[categorical_colnames]
+        categorical_variable_list = list(set(small_X.columns) - set(self.index))
+        categorical_small_X = small_X[categorical_variable_list]
+        categorical_large_X = large_X[categorical_variable_list]
 
         # 상위 n% 필터링 부분
         midlle_small_X = self.extract_middle_percent(
@@ -229,17 +239,17 @@ class FiGen:
 
         small_total_x = pd.concat([synthetic_small_X, origin_small_x], axis=0)
 
-        small_total_x[TARGET] = small_Y.iloc[:1].values[0][0]
+        small_total_x = small_total_x.assign(target=small_Y.iloc[:1].values[0][0])
 
         origin_large_x = pd.concat(
             [midlle_large_X, categorical_large_X.loc[midlle_large_X.index]], axis=1
         )
 
-        origin_large_x[TARGET] = large_Y.iloc[:1].values[0][0]
+        origin_large_x = origin_large_x.assign(target=large_Y.iloc[:1].values[0][0])
 
         total = pd.concat([small_total_x, origin_large_x], axis=0)
 
-        return total.drop(columns=[TARGET]), total[TARGET]
+        return total.drop(columns=["target"]), total["target"]
 
     def fit(
         self,
