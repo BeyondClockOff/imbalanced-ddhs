@@ -66,7 +66,7 @@ class FiGen:
             return data_middle
         else:
             print("No middle 50% found, returning original data")
-            return []
+            return data
 
     def find_categorical(
         self,
@@ -156,10 +156,11 @@ class FiGen:
         synthesizer.fit(data=midlle_small_X)
 
         # 합성된 개수 / 원래 large 클래스 개수 <= ratio 만족시 그만 생성
-
+        cnt = 1
         while len(synthetic_sample) / len(large_X) < self.ratio:
             # large class의 데이터 사이즈 10배 만큼 데이터 생성
-            synthetic_data = synthesizer.sample(num_rows=len(large_X))
+            cnt += 1
+            synthetic_data = synthesizer.sample(num_rows=len(large_X) * cnt)
 
             synthetic_samples_to_generate = int(
                 (self.ratio - len(synthetic_sample) / len(large_X)) * len(large_X)
@@ -223,6 +224,10 @@ class FiGen:
         )  ##TODO: 추후에 하이퍼 파라미터로 뺄 수 있음
 
         # 연속형 데이터 생성 및 데이터 적합 판단
+
+        print("midlle_small_X", midlle_small_X)
+        print("small_X", small_X)
+        print("large_X", large_X)
         suitable_generated_small_X = self.suitable_judge(
             midlle_small_X, small_X, large_X
         )
@@ -236,9 +241,9 @@ class FiGen:
         origin_small_x = pd.concat(
             [midlle_small_X, categorical_small_X.loc[midlle_small_X.index]], axis=1
         )
-
+        print(1, origin_small_x)
         small_total_x = pd.concat([synthetic_small_X, origin_small_x], axis=0)
-
+        print(2, small_total_x)
         small_total_x = small_total_x.assign(target=small_Y.iloc[:1].values[0][0])
 
         origin_large_x = pd.concat(
