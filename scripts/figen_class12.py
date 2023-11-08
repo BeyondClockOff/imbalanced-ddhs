@@ -224,10 +224,6 @@ class FiGen:
         )  ##TODO: 추후에 하이퍼 파라미터로 뺄 수 있음
 
         # 연속형 데이터 생성 및 데이터 적합 판단
-
-        print("midlle_small_X", midlle_small_X)
-        print("small_X", small_X)
-        print("large_X", large_X)
         suitable_generated_small_X = self.suitable_judge(
             midlle_small_X, small_X, large_X
         )
@@ -241,9 +237,7 @@ class FiGen:
         origin_small_x = pd.concat(
             [midlle_small_X, categorical_small_X.loc[midlle_small_X.index]], axis=1
         )
-        print(1, origin_small_x)
         small_total_x = pd.concat([synthetic_small_X, origin_small_x], axis=0)
-        print(2, small_total_x)
         small_total_x = small_total_x.assign(target=small_Y.iloc[:1].values[0][0])
 
         origin_large_x = pd.concat(
